@@ -7,7 +7,7 @@
 
 # .PHONY — говорим Make что это не файлы а команды
 # Без этого Make будет искать файл с таким именем на диске
-.PHONY: help up down logs test backup status clean monitoring-up monitoring-down nginx-up nginx-down
+.PHONY: help up down logs test backup status clean monitoring-up monitoring-down nginx-up nginx-down update cleanup ports
 
 # ─────────────────────────────────────────
 # Переменные
@@ -56,6 +56,12 @@ help:
 	@echo "  make backup          — создать бэкап проекта"
 	@echo "  make health          — проверить состояние сервера"
 	@echo "  make info            — информация о сервере"
+	@echo "  make ports           — все занятые порты"
+	@echo "  make logs-c c=<name> — логи контейнера"
+	@echo "  make update          — обновить все Docker образы"
+	@echo "  make update-s s=<s>  — обновить один стек"
+	@echo "  make cleanup         — мягкая очистка Docker"
+	@echo "  make cleanup-full    — полная очистка (с подтверждением)"
 	@echo ""
 	@echo "$(GREEN)Очистка:$(RESET)"
 	@echo "  make clean           — удалить остановленные контейнеры и неиспользуемые образы"
@@ -161,6 +167,31 @@ health:
 # Информация о сервере
 info:
 	bash bash/server-info.sh
+
+# Показать все занятые порты
+ports:
+	bash bash/ports.sh
+
+# Логи контейнера: make logs-c c=nodeapp
+logs-c:
+	bash bash/logs.sh $(c)
+
+# Обновить все Docker образы
+update:
+	@echo "$(CYAN)Обновляю Docker образы...$(RESET)"
+	bash bash/update.sh
+
+# Обновить конкретный стек: make update-s s=monitoring
+update-s:
+	bash bash/update.sh $(s)
+
+# Мягкая очистка Docker
+cleanup:
+	bash bash/cleanup.sh
+
+# Полная очистка (с подтверждением)
+cleanup-full:
+	bash bash/cleanup.sh --full
 
 # ─────────────────────────────────────────
 # ЗАПУСТИТЬ ВСЁ СРАЗУ
