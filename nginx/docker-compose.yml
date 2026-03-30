@@ -3,30 +3,51 @@ version: '3.8'
 services:
   # Nginx — reverse proxy, единая точка входа для всех сервисов
   nginx:
-    image: nginx:alpine       # Alpine версия — минимальный образ (~5MB вместо ~130MB)
+    image: nginx:alpine
     container_name: nginx-proxy
-    restart: unless-stopped   # Перезапускать автоматически (кроме ручной остановки)
+    restart: unless-stopped
     ports:
-      - "80:80"               # Открываем порт 80 — стандартный HTTP порт
+      - "80:80"
     volumes:
-      # Монтируем конфиг (ro = контейнер не может его изменить)
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
+
+    # HEALTHCHECK — Docker периодически проверяет жив ли контейнер
+    # Если проверка падает N раз подряд — контейнер помечается как "unhealthy"
+    # Docker может автоматически перезапустить unhealthy контейнер
+    healthcheck:
+      # Команда которая проверяет работоспособность
+      # wget -qO- — тихий GET запрос, вывод в stdout
+      # /health — наш специальный endpoint в nginx.conf (возвращает 200 OK)
+      # || exit 1 — если wget упал (не смог подключиться) — возвращаем код ошибки
+      test: ["CMD", "wget", "-qO-", "http://localhost/health", "||", "exit", "1"]
+
+      interval: 30s   # Как часто проверять (каждые 30 секунд)
+      timeout: 5s     # Сколько ждать ответа (если не ответил за 5с — считаем ошибкой)
+      retries: 3      # Сколько раз подряд должна упасть проверка чтобы пометить unhealthy
+      start_period: 10s  # Не проверять первые 10 секунд после старта (контейнер ещё грузится)
+
     depends_on:
-      - nodeapp               # Nginx стартует только после nodeapp
+      nodeapp:
+        condition: service_healthy  # Nginx стартует только когда nodeapp стал healthy
 
   # Node.js приложение — основной сервис
   nodeapp:
     build:
-      context: ../docker/nodeapp  # Путь к Dockerfile (относительно этого docker-compose.yml)
+      context: ../docker/nodeapp
     container_name: nodeapp
     restart: unless-stopped
     expose:
       - "3000"
-      # expose (не ports) — порт доступен только внутри Docker сети
-      # Снаружи к nodeapp нельзя обратиться напрямую — только через Nginx
-      # Это правильная архитектура: всё через proxy
 
-# Все сервисы в одной Docker сети — могут обращаться друг к другу по имени контейнера
+    healthcheck:
+      # node — встроен в контейнер, делаем HTTP запрос через встроенный модуль
+      # Если порт 3000 отвечает — приложение живое
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s  # Node.js стартует чуть дольше чем Nginx
+
 networks:
   default:
-    name: devops-network  # Явное имя сети — удобно при отладке (docker network ls)
+    name: devops-network

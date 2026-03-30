@@ -1,0 +1,38 @@
+# Grafana Alerting — настройка contact point (куда отправлять алерты)
+# Этот файл автоматически читается Grafana при старте (provisioning)
+# Документация: https://grafana.com/docs/grafana/latest/alerting/
+
+apiVersion: 1
+
+# contactPoints — каналы уведомлений
+# Можно настроить: Telegram, Slack, Email, PagerDuty, Webhook и др.
+contactPoints:
+
+  - orgId: 1           # ID организации в Grafana (1 = дефолтная)
+    name: Telegram     # Название contact point — используется в политиках алертов
+
+    receivers:
+      - uid: telegram-receiver   # Уникальный ID (любая строка без пробелов)
+        type: telegram           # Тип интеграции
+
+        settings:
+          # Токен бота из @BotFather
+          # В продакшне заменить на переменную окружения: ${GF_TELEGRAM_TOKEN}
+          botToken: "${GF_TELEGRAM_BOT_TOKEN}"
+
+          # ID чата куда слать сообщения
+          # Узнать: написать боту, открыть https://api.telegram.org/bot<TOKEN>/getUpdates
+          chatId: "${GF_TELEGRAM_CHAT_ID}"
+
+          # Формат сообщения (поддерживает HTML)
+          message: |
+            {{ `{{ range .Alerts }}` }}
+            {{ `{{ if eq .Status "firing" }}` }}🔴 АЛЕРТ: {{ `{{ .Labels.alertname }}` }}
+            {{ `{{ else }}` }}🟢 RESOLVED: {{ `{{ .Labels.alertname }}` }}
+            {{ `{{ end }}` }}
+            Severity: {{ `{{ .Labels.severity }}` }}
+            {{ `{{ .Annotations.summary }}` }}
+            {{ `{{ .Annotations.description }}` }}
+            {{ `{{ end }}` }}
+
+        disableResolveMessage: false  # true = не отправлять уведомление когда алерт прошёл

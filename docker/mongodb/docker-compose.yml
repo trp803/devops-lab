@@ -2,39 +2,53 @@ version: '3.8'
 
 services:
   # MongoDB — документоориентированная NoSQL база данных
-  # Хранит данные в JSON-подобном формате (BSON)
   mongodb:
-    image: mongo:6.0              # Официальный образ MongoDB версии 6.0
+    image: mongo:6.0
     container_name: mongodb
     restart: always
     ports:
-      - "27017:27017"  # Стандартный порт MongoDB — доступен снаружи для подключения
+      - "27017:27017"
     environment:
-      # Значения из .env файла
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER}      # root пользователь БД
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}  # пароль root пользователя
-      MONGO_INITDB_DATABASE: ${MONGO_DB}             # База данных создаётся автоматически
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+      MONGO_INITDB_DATABASE: ${MONGO_DB}
     volumes:
-      - mongodb_data:/data/db  # /data/db — где MongoDB хранит данные
-      # Скрипты в этой папке выполняются при первом запуске контейнера (инициализация)
+      - mongodb_data:/data/db
       - ./init:/docker-entrypoint-initdb.d
 
+    healthcheck:
+      # mongosh — MongoDB Shell, встроен в образ mongo:6.0
+      # db.adminCommand('ping') — команда проверки подключения к БД
+      # Возвращает { ok: 1 } если БД жива
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')", "--quiet"]
+      interval: 30s
+      timeout: 10s    # MongoDB может стартовать дольше — даём 10 секунд на ответ
+      retries: 5      # 5 попыток — MongoDB иногда медленно инициализируется
+      start_period: 40s  # MongoDB при первом запуске инициализирует данные — ждём дольше
+
   # Mongo Express — веб-интерфейс для управления MongoDB
-  # Позволяет просматривать коллекции, документы, делать запросы через браузер
   mongo-express:
-    image: mongo-express          # Официальный образ Mongo Express
+    image: mongo-express
     container_name: mongo-express
     restart: always
     ports:
-      - "8081:8081"  # Веб-интерфейс доступен в браузере на порту 8081
+      - "8081:8081"
     environment:
-      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_USER}      # Логин для подключения к MongoDB
-      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_PASSWORD}  # Пароль
-      # URL подключения к MongoDB: mongodb://user:pass@host:port/
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_USER}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_PASSWORD}
       ME_CONFIG_MONGODB_URL: mongodb://${MONGO_USER}:${MONGO_PASSWORD}@mongodb:27017/
-      ME_CONFIG_BASICAUTH: false  # Отключаем Basic Auth для Mongo Express (для удобства разработки)
+      ME_CONFIG_BASICAUTH: false
     depends_on:
-      - mongodb  # Mongo Express стартует только после MongoDB
+      mongodb:
+        condition: service_healthy  # Стартуем только когда MongoDB готова принимать запросы
+
+    healthcheck:
+      # Mongo Express — веб-сервис, проверяем HTTP ответ
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081", "||", "exit", "1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
 volumes:
-  mongodb_data:  # Данные MongoDB — сохраняются между перезапусками
+  mongodb_data:

@@ -1,0 +1,241 @@
+# Правила алертов Grafana
+# Каждое правило — PromQL запрос + условие срабатывания + куда отправить
+# Grafana проверяет правила каждые N секунд и отправляет уведомление при срабатывании
+
+apiVersion: 1
+
+# groups — группы правил (логическая группировка)
+groups:
+
+  # ─────────────────────────────────────────
+  # ГРУППА: Системные ресурсы сервера
+  # ─────────────────────────────────────────
+  - orgId: 1
+    name: System Resources      # Название группы (видно в UI Grafana)
+    folder: DevOps Lab Alerts   # Папка в Grafana куда помещать алерты
+    interval: 1m                # Как часто проверять правила (каждую минуту)
+
+    rules:
+
+      # ─── Алерт: CPU перегружен ───
+      - uid: cpu-high-alert         # Уникальный ID правила
+        title: High CPU Usage       # Название алерта
+
+        # PromQL запрос: средний % использования CPU за последние 5 минут
+        # 100 - idle = занятый CPU
+        # avg by(instance) = усредняем по всем CPU ядрам
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: prometheus    # Берём данные из Prometheus
+            model:
+              expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)
+              intervalMs: 1000
+              maxDataPoints: 43200
+
+          # B — порог: если CPU > 80%
+          - refId: B
+            datasourceUid: "__expr__"    # Встроенный обработчик выражений
+            model:
+              type: reduce
+              reducer: last              # Берём последнее значение из серии A
+              expression: A
+
+          # C — финальное условие: B > 80
+          - refId: C
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt             # gt = greater than (больше чем)
+                    params: [80]         # Порог: 80%
+
+        # Алерт срабатывает если условие выполняется N минут подряд
+        # Защита от кратких всплесков (не спамим при мгновенных пиках)
+        for: 5m
+
+        # Метки добавляются к алерту (используются для маршрутизации)
+        labels:
+          severity: warning            # warning / critical
+          team: devops
+
+        # Текст уведомления
+        annotations:
+          summary: "CPU нагрузка превышает 80%"
+          description: "CPU использование: {{ $value | printf \"%.1f\" }}%. Проверь процессы: top, htop"
+
+      # ─── Алерт: RAM заканчивается ───
+      - uid: ram-low-alert
+        title: Low Memory
+
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            model:
+              # Свободная память в % от общей
+              expr: (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100
+              intervalMs: 1000
+              maxDataPoints: 43200
+
+          - refId: B
+            datasourceUid: "__expr__"
+            model:
+              type: reduce
+              reducer: last
+              expression: A
+
+          # Алерт если свободной памяти МЕНЬШЕ 15%
+          - refId: C
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: lt             # lt = less than (меньше чем)
+                    params: [15]
+
+        for: 3m
+
+        labels:
+          severity: critical
+
+        annotations:
+          summary: "Свободной памяти меньше 15%"
+          description: "Доступно RAM: {{ $value | printf \"%.1f\" }}%. Возможна нехватка памяти."
+
+      # ─── Алерт: Диск заканчивается ───
+      - uid: disk-low-alert
+        title: Low Disk Space
+
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            model:
+              # Свободное место в % от общего размера раздела /
+              expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100
+              intervalMs: 1000
+              maxDataPoints: 43200
+
+          - refId: B
+            datasourceUid: "__expr__"
+            model:
+              type: reduce
+              reducer: last
+              expression: A
+
+          # Алерт если свободно МЕНЬШЕ 20% диска
+          - refId: C
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: lt
+                    params: [20]
+
+        for: 5m
+
+        labels:
+          severity: warning
+
+        annotations:
+          summary: "Свободного места на диске меньше 20%"
+          description: "Свободно: {{ $value | printf \"%.1f\" }}%. Удали старые логи или Docker образы."
+
+      # ─── Алерт: Сервис недоступен (контейнер упал) ───
+      - uid: container-down-alert
+        title: Container Down
+
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            model:
+              # up == 0 означает что Prometheus не смог достучаться до target
+              # Это происходит если контейнер упал или не отвечает на /metrics
+              expr: up == 0
+              intervalMs: 1000
+              maxDataPoints: 43200
+
+          - refId: B
+            datasourceUid: "__expr__"
+            model:
+              type: reduce
+              reducer: last
+              expression: A
+
+          - refId: C
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]          # Срабатывает если хоть один target недоступен
+
+        for: 1m   # 1 минута — быстро реагируем на падение сервиса
+
+        labels:
+          severity: critical
+
+        annotations:
+          summary: "Сервис {{ $labels.job }} недоступен"
+          description: "Prometheus не может получить метрики от {{ $labels.instance }}. Проверь контейнер."
+
+  # ─────────────────────────────────────────
+  # ГРУППА: Docker контейнеры
+  # ─────────────────────────────────────────
+  - orgId: 1
+    name: Docker Containers
+    folder: DevOps Lab Alerts
+    interval: 1m
+
+    rules:
+
+      # ─── Алерт: Контейнер использует много RAM ───
+      - uid: container-memory-alert
+        title: Container High Memory
+
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            model:
+              # Память контейнера в MB, исключаем служебные контейнеры
+              expr: container_memory_usage_bytes{name!=""} / 1024 / 1024
+              intervalMs: 1000
+              maxDataPoints: 43200
+
+          - refId: B
+            datasourceUid: "__expr__"
+            model:
+              type: reduce
+              reducer: last
+              expression: A
+
+          # Алерт если контейнер использует больше 500MB RAM
+          - refId: C
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [500]
+
+        for: 5m
+
+        labels:
+          severity: warning
+
+        annotations:
+          summary: "Контейнер {{ $labels.name }} использует много памяти"
+          description: "Потребление RAM: {{ $value | printf \"%.0f\" }}MB. Проверь утечки памяти."

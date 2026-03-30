@@ -19,8 +19,17 @@ services:
       # Named volume для хранения данных метрик между перезапусками
       - prometheus_data:/prometheus
     command:
-      - '--config.file=/etc/prometheus/prometheus.yml'  # Указываем где наш конфиг
-      - '--storage.tsdb.retention.time=15d'             # Хранить данные 15 дней, потом удалять
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=15d'
+
+    healthcheck:
+      # Prometheus имеет встроенный /-/healthy endpoint
+      # Возвращает 200 OK когда сервер готов принимать запросы
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/healthy", "||", "exit", "1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   # ─────────────────────────────────────────
   # GRAFANA — визуализация метрик и логов
@@ -35,10 +44,24 @@ services:
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin123  # Пароль для входа (логин: admin)
       - GF_USERS_ALLOW_SIGN_UP=false         # Запрещаем самостоятельную регистрацию
+      # Токен и chat_id Telegram бота — для алертов
+      # Берутся из .env файла (не хранить в коде!)
+      - GF_TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - GF_TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      # Включаем unified alerting (новая система алертов Grafana)
+      - GF_ALERTING_ENABLED=true
+      - GF_UNIFIED_ALERTING_ENABLED=true
     volumes:
-      - grafana_data:/var/lib/grafana  # Хранение дашбордов и настроек между перезапусками
-      # Provisioning — автоматическая настройка datasources при старте контейнера
+      - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning
+
+    healthcheck:
+      # Grafana имеет /api/health endpoint — возвращает JSON {"database":"ok"}
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health", "||", "exit", "1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
   # ─────────────────────────────────────────
   # NODE EXPORTER — метрики сервера
@@ -92,7 +115,15 @@ services:
     volumes:
       - ./loki/loki.yml:/etc/loki/local-config.yaml  # Конфиг Loki
       - loki_data:/loki                               # Хранение логов между перезапусками
-    command: -config.file=/etc/loki/local-config.yaml  # Указываем конфиг при старте
+    command: -config.file=/etc/loki/local-config.yaml
+
+    healthcheck:
+      # Loki имеет /ready endpoint — возвращает "ready" когда готов принимать логи
+      test: ["CMD", "wget", "-qO-", "http://localhost:3100/ready", "||", "exit", "1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s  # Loki дольше инициализируется (создаёт индексы)
 
   # ─────────────────────────────────────────
   # PROMTAIL — сборщик логов
