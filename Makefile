@@ -7,7 +7,7 @@
 
 # .PHONY — говорим Make что это не файлы а команды
 # Без этого Make будет искать файл с таким именем на диске
-.PHONY: help up down logs test backup status clean monitoring-up monitoring-down nginx-up nginx-down update cleanup ports
+.PHONY: help up down logs test backup status clean monitoring-up monitoring-down nginx-up nginx-down update cleanup ports cron-setup cron-remove cron-list cron-logs
 
 # ─────────────────────────────────────────
 # Переменные
@@ -62,6 +62,13 @@ help:
 	@echo "  make update-s s=<s>  — обновить один стек"
 	@echo "  make cleanup         — мягкая очистка Docker"
 	@echo "  make cleanup-full    — полная очистка (с подтверждением)"
+	@echo ""
+	@echo "$(GREEN)Cron:$(RESET)"
+	@echo "  make cron-setup      — установить все cron задачи"
+	@echo "  make cron-remove     — удалить cron задачи"
+	@echo "  make cron-list       — показать расписание"
+	@echo "  make cron-logs       — логи cron задач"
+	@echo "  make cron-logs-f     — следить за логами"
 	@echo ""
 	@echo "$(GREEN)Очистка:$(RESET)"
 	@echo "  make clean           — удалить остановленные контейнеры и неиспользуемые образы"
@@ -192,6 +199,32 @@ cleanup:
 # Полная очистка (с подтверждением)
 cleanup-full:
 	bash bash/cleanup.sh --full
+
+# ─────────────────────────────────────────
+# CRON — автоматизация по расписанию
+# ─────────────────────────────────────────
+
+# Установить все cron задачи
+cron-setup:
+	@echo "$(CYAN)Устанавливаю cron задачи...$(RESET)"
+	bash bash/cron-setup.sh
+
+# Удалить все cron задачи проекта
+cron-remove:
+	@echo "$(YELLOW)Удаляю cron задачи...$(RESET)"
+	bash bash/cron-setup.sh remove
+
+# Показать текущие cron задачи и расписание
+cron-list:
+	bash bash/cron-setup.sh list
+
+# Просмотр логов cron задач
+cron-logs:
+	bash bash/cron-logs.sh
+
+# Следить за логами в реальном времени
+cron-logs-f:
+	bash bash/cron-logs.sh -f
 
 # ─────────────────────────────────────────
 # ЗАПУСТИТЬ ВСЁ СРАЗУ
