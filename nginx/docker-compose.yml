@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  # Nginx — reverse proxy, единая точка входа для всех сервисов
+  nginx:
+    image: nginx:alpine       # Alpine версия — минимальный образ (~5MB вместо ~130MB)
+    container_name: nginx-proxy
+    restart: unless-stopped   # Перезапускать автоматически (кроме ручной остановки)
+    ports:
+      - "80:80"               # Открываем порт 80 — стандартный HTTP порт
+    volumes:
+      # Монтируем конфиг (ro = контейнер не может его изменить)
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - nodeapp               # Nginx стартует только после nodeapp
+
+  # Node.js приложение — основной сервис
+  nodeapp:
+    build:
+      context: ../docker/nodeapp  # Путь к Dockerfile (относительно этого docker-compose.yml)
+    container_name: nodeapp
+    restart: unless-stopped
+    expose:
+      - "3000"
+      # expose (не ports) — порт доступен только внутри Docker сети
+      # Снаружи к nodeapp нельзя обратиться напрямую — только через Nginx
+      # Это правильная архитектура: всё через proxy
+
+# Все сервисы в одной Docker сети — могут обращаться друг к другу по имени контейнера
+networks:
+  default:
+    name: devops-network  # Явное имя сети — удобно при отладке (docker network ls)

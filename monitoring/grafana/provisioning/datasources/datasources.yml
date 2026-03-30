@@ -1,0 +1,20 @@
+# Grafana Provisioning — автоматическое подключение источников данных при старте
+# Без этого файла нужно каждый раз вручную добавлять datasources через UI
+# При наличии этого файла — Grafana подключает их автоматически
+
+apiVersion: 1  # Версия формата provisioning файла
+
+datasources:
+
+  # ─── Prometheus — источник метрик ───
+  - name: Prometheus          # Название datasource в UI Grafana
+    type: prometheus          # Тип: говорим Grafana что это Prometheus
+    access: proxy             # proxy = Grafana сама ходит к Prometheus (не браузер пользователя)
+    url: http://prometheus:9090  # Адрес Prometheus внутри Docker сети
+    isDefault: true           # Prometheus — источник данных по умолчанию для новых дашбордов
+
+  # ─── Loki — источник логов ───
+  - name: Loki                # Название datasource в UI Grafana
+    type: loki                # Тип: говорим Grafana что это Loki
+    access: proxy             # Grafana сама ходит к Loki
+    url: http://loki:3100     # Адрес Loki внутри Docker сети

@@ -1,0 +1,50 @@
+# Конфигурация Loki — система хранения и поиска логов
+# Loki работает как база данных для логов:
+# Promtail отправляет логи → Loki хранит → Grafana читает и показывает
+
+# Отключаем аутентификацию — для локального использования достаточно
+# В продакшне с публичным доступом нужно включить
+auth_enabled: false
+
+server:
+  http_listen_port: 3100  # Порт на котором Loki принимает запросы
+
+# Ingester — компонент который принимает входящие логи и буферизует их перед записью
+ingester:
+  lifecycler:
+    ring:
+      kvstore:
+        store: inmemory  # Хранение метаданных в памяти (для single-node установки)
+      replication_factor: 1  # Один инстанс — репликация не нужна
+  chunk_idle_period: 5m     # Записать чанк на диск если 5 минут нет новых логов
+  chunk_retain_period: 30s  # Держать чанк в памяти 30 секунд после записи (для кеша)
+
+# Настройка схемы хранения данных
+schema_config:
+  configs:
+    - from: 2024-01-01         # С какой даты применяется эта схема
+      store: boltdb-shipper    # Движок для хранения индексов (встроенная БД)
+      object_store: filesystem # Хранить сами логи на файловой системе
+      schema: v11              # Версия схемы (v11 — стабильная и актуальная)
+      index:
+        prefix: index_   # Префикс для файлов индекса
+        period: 24h      # Создавать новый файл индекса каждые 24 часа
+
+# Настройки хранилища
+storage_config:
+  boltdb_shipper:
+    active_index_directory: /loki/index    # Где хранить активные индексы
+    cache_location: /loki/cache            # Где кешировать данные для быстрого доступа
+    shared_store: filesystem               # Где долгосрочное хранилище
+  filesystem:
+    directory: /loki/chunks  # Где хранить сами файлы с логами (chunks)
+
+# Ограничения
+limits_config:
+  retention_period: 720h  # Хранить логи 30 дней (720 часов), потом автоудаление
+
+# Compactor — фоновый процесс который сжимает и чистит старые данные
+compactor:
+  working_directory: /loki/compactor  # Рабочая директория для временных файлов
+  shared_store: filesystem            # Откуда читать данные для сжатия
+  retention_enabled: true             # Включаем автоматическое удаление старых логов

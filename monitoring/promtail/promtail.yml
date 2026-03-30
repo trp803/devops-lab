@@ -1,0 +1,58 @@
+# Конфигурация Promtail — агент сбора логов
+# Promtail читает лог-файлы и отправляет их в Loki
+# Аналогия: Promtail = почтальон, Loki = почтовое отделение
+
+server:
+  http_listen_port: 9080  # Внутренний порт Promtail (для health check)
+  grpc_listen_port: 0     # 0 = отключить gRPC (не нужен в этой конфигурации)
+
+# positions.yaml — файл где Promtail запоминает до какого места дочитал каждый лог
+# Если Promtail перезапустится — он продолжит с того же места, а не сначала
+positions:
+  filename: /tmp/positions.yaml
+
+# Куда отправлять логи
+clients:
+  - url: http://loki:3100/loki/api/v1/push  # Адрес Loki API, 'loki' = имя сервиса в Docker
+
+# scrape_configs — что и откуда читать
+scrape_configs:
+
+  # ─── Логи Docker контейнеров ───
+  - job_name: docker
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: docker  # Метка которая добавится ко всем логам из этого источника
+          # __path__ — путь к файлам логов (поддерживает glob-паттерны)
+          # Docker пишет логи каждого контейнера в отдельный JSON файл
+          __path__: /var/lib/docker/containers/*/*-json.log
+
+    # pipeline_stages — обрабатываем логи перед отправкой
+    pipeline_stages:
+      # json: — парсим JSON формат логов Docker
+      # Docker пишет: {"log":"текст\n","stream":"stdout","time":"..."}
+      - json:
+          expressions:
+            log: log        # Извлекаем поле "log" (сам текст лога)
+            stream: stream  # Извлекаем "stream" (stdout или stderr)
+            time: time      # Извлекаем timestamp
+
+      # labels: — добавляем поля как метки (по ним можно фильтровать в Grafana)
+      - labels:
+          stream:  # stream=stdout или stream=stderr — удобно для фильтрации
+
+      # timestamp: — устанавливаем время лога из самого лога (не время получения)
+      - timestamp:
+          source: time         # Берём из поля "time" которое извлекли выше
+          format: RFC3339Nano  # Формат времени который использует Docker
+
+  # ─── Системные логи хоста ───
+  - job_name: system
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: system                # Метка для фильтрации
+          __path__: /var/log/*.log   # Все .log файлы в /var/log (syslog, auth.log и т.д.)

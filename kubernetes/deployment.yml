@@ -1,21 +1,35 @@
-apiVersion: apps/v1
-kind: Deployment
+# Kubernetes Deployment — описывает как запускать приложение в кластере
+# Deployment управляет набором Pod'ов и следит чтобы нужное количество всегда работало
+
+apiVersion: apps/v1   # Версия API Kubernetes для ресурса Deployment
+kind: Deployment      # Тип ресурса
+
 metadata:
-  name: webapp
+  name: webapp        # Имя Deployment в кластере
   labels:
-    app: webapp
+    app: webapp       # Метки для идентификации и группировки ресурсов
+
 spec:
-  replicas: 3
+  replicas: 3  # Сколько копий (Pod'ов) запускать одновременно
+               # Если один Pod упадёт — Kubernetes автоматически запустит новый
+
+  # selector — как Deployment находит "свои" Pod'ы
+  # Он управляет Pod'ами у которых есть метка app=webapp
   selector:
     matchLabels:
       app: webapp
+
+  # template — шаблон для создания новых Pod'ов
   template:
     metadata:
       labels:
-        app: webapp
+        app: webapp  # Метка Pod'а — должна совпадать с selector выше
+
     spec:
       containers:
-      - name: webapp
-        image: nginx:alpine
-        ports:
-        - containerPort: 80
+        - name: webapp           # Имя контейнера внутри Pod'а
+          image: nginx:alpine    # Docker образ (nginx на Alpine Linux)
+          ports:
+            - containerPort: 80  # Порт который слушает приложение внутри контейнера
+                                 # Это документация — не открывает порт сам по себе
+                                 # Реальный доступ настраивается через Service

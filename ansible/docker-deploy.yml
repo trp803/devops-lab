@@ -1,75 +1,94 @@
 ---
+# Ansible плейбук — установка Docker и запуск приложения
+# Ansible выполняет задачи последовательно на удалённых серверах по SSH
+# Идемпотентен: можно запускать много раз — результат всегда одинаковый
+
 - name: Install Docker and Deploy App
-  hosts: webservers
-  become: yes
+  hosts: webservers  # Группа серверов из inventory.ini
+  become: yes        # Выполнять от имени root (sudo)
 
   tasks:
+    # Устанавливаем системные зависимости нужные для добавления репозитория Docker
     - name: Установить зависимости
-      apt:
+      apt:               # Модуль для управления пакетами на Ubuntu/Debian
         name:
-          - ca-certificates
-          - curl
-          - gnupg
-        state: present
-        update_cache: yes
+          - ca-certificates  # Для проверки SSL сертификатов
+          - curl             # Для скачивания GPG ключа
+          - gnupg            # Для работы с GPG ключами
+        state: present     # present = установить если не установлено
+        update_cache: yes  # Обновить список пакетов (apt update) перед установкой
 
+    # Создаём папку для хранения GPG ключей репозиториев
     - name: Создать папку для ключей
       file:
         path: /etc/apt/keyrings
-        state: directory
-        mode: '0755'
+        state: directory  # Убедиться что это директория (создать если нет)
+        mode: '0755'      # Права: владелец rwx, остальные r-x
 
+    # Добавляем официальный GPG ключ Docker — для проверки подлинности пакетов
     - name: Добавить GPG ключ Docker
       shell: |
         curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
       args:
-        creates: /etc/apt/keyrings/docker.gpg
+        creates: /etc/apt/keyrings/docker.gpg  # Не выполнять если файл уже существует (идемпотентность)
 
+    # Добавляем официальный репозиторий Docker в список источников apt
     - name: Добавить репозиторий Docker
       shell: |
         echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
       args:
-        creates: /etc/apt/sources.list.d/docker.list
+        creates: /etc/apt/sources.list.d/docker.list  # Идемпотентность
 
+    # Устанавливаем Docker CE (Community Edition) и его компоненты
     - name: Установить Docker
       apt:
         name:
-          - docker-ce
-          - docker-ce-cli
-          - containerd.io
+          - docker-ce        # Docker Engine (основной компонент)
+          - docker-ce-cli    # Клиент командной строки (docker команда)
+          - containerd.io    # Container runtime (запускает контейнеры)
         state: present
-        update_cache: yes
+        update_cache: yes    # Обновляем кеш чтобы увидеть новый репозиторий Docker
 
+    # Включаем Docker как системный сервис
     - name: Запустить и включить Docker
       systemd:
         name: docker
-        state: started
-        enabled: yes
+        state: started   # Запустить прямо сейчас
+        enabled: yes     # Включить автозапуск при старте системы
 
+    # Добавляем пользователя ubuntu в группу docker
+    # Без этого нужно каждый раз писать sudo docker
     - name: Добавить ubuntu в группу docker
       user:
         name: ubuntu
         groups: docker
-        append: yes
+        append: yes  # append: не удалять из других групп, только добавить
 
+    # Останавливаем старый контейнер если он работает
+    # "|| true" — не падать если контейнера нет (идемпотентность)
     - name: Остановить старый контейнер если есть
       shell: docker stop webapp || true
 
+    # Удаляем старый контейнер
     - name: Удалить старый контейнер если есть
       shell: docker rm webapp || true
 
+    # Запускаем новый контейнер с веб-приложением
     - name: Запустить веб-приложение
       shell: |
         docker run -d \
-          -p 80:80 \
-          --name webapp \
-          --restart always \
-          nginx:alpine
+          -p 80:80 \           # Пробрасываем порт 80
+          --name webapp \      # Имя контейнера
+          --restart always \   # Автоперезапуск
+          nginx:alpine         # Образ (nginx на Alpine Linux)
 
+    # Проверяем что контейнер запустился
+    # register — сохраняем вывод команды в переменную result
     - name: Проверить что контейнер запущен
       shell: docker ps | grep webapp
       register: result
 
+    # Выводим результат в лог Ansible
     - name: Показать результат
       debug:
         msg: "✅ Приложение запущено: {{ result.stdout }}"

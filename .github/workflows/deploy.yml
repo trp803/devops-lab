@@ -1,30 +1,122 @@
-name: Deploy PROD
+# CI/CD пайплайн для продакшн окружения
+# Запускается автоматически при каждом push в ветку main
+# Состоит из 4 джобов, которые выполняются последовательно:
+# test → security → build-push → deploy
 
+name: Deploy PROD  # Название пайплайна — видно в GitHub Actions UI
+
+# Триггер: запускаем пайплайн только при push в main
 on:
   push:
     branches:
       - main
 
+# Глобальные переменные — доступны во всех джобах
 env:
-  IMAGE_NAME: final-app
-  CONTAINER_NAME: final-app
-  PORT: 8888
+  IMAGE_NAME: final-app                                              # Локальное имя Docker образа
+  CONTAINER_NAME: final-app                                          # Имя запущенного контейнера на сервере
+  PORT: 8888                                                         # Порт на котором будет доступно приложение
+  DOCKERHUB_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/final-app      # Полное имя образа в Docker Hub
 
+# ─────────────────────────────────────────
+# ДЖОБ 1: Запуск тестов
+# ─────────────────────────────────────────
 jobs:
-  deploy:
+  test:
+    name: Tests
+    runs-on: ubuntu-latest  # Запускаем на свежей виртуальной машине с Ubuntu
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3  # Клонируем репозиторий в рабочую директорию
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3  # Устанавливаем Node.js нужной версии
+        with:
+          node-version: '18'  # Версия Node.js — должна совпадать с Dockerfile
+
+      - name: Install dependencies
+        working-directory: docker/nodeapp  # Переходим в папку с приложением
+        run: npm install                   # Устанавливаем зависимости из package.json
+
+      - name: Run tests
+        working-directory: docker/nodeapp
+        run: npm test  # Запускаем Jest тесты (скрипт "test" из package.json)
+
+# ─────────────────────────────────────────
+# ДЖОБ 2: Сканирование безопасности
+# ─────────────────────────────────────────
+  security:
+    name: Security scan (Trivy)
     runs-on: ubuntu-latest
+    needs: test  # Запускается только если джоб "test" прошёл успешно
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Build image for scanning
+        # Собираем образ локально — только для сканирования, не пушим
+        run: docker build -t $IMAGE_NAME:scan docker/nodeapp
+
+      - name: Run Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@master  # Официальный GitHub Action от создателей Trivy
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:scan  # Образ который сканируем
+          format: table                           # Вывод в виде таблицы в логах
+          exit-code: '1'                          # Завершить с ошибкой если найдены уязвимости
+          severity: CRITICAL,HIGH                 # Проверяем только критические и высокие уязвимости
+
+# ─────────────────────────────────────────
+# ДЖОБ 3: Сборка и публикация в Docker Hub
+# ─────────────────────────────────────────
+  build-push:
+    name: Build & Push Docker Hub
+    runs-on: ubuntu-latest
+    needs: security  # Запускается только если сканирование прошло без критических уязвимостей
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
       - name: Set version
-        id: version
+        id: version  # ID шага — чтобы использовать его outputs ниже
         run: |
+          # Берём первые 8 символов хэша коммита — это и есть версия образа
           echo "SHA=${GITHUB_SHA::8}" >> $GITHUB_OUTPUT
+          # Дата сборки для истории
           echo "DATE=$(date +%Y%m%d-%H%M%S)" >> $GITHUB_OUTPUT
 
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2  # Официальный Action для авторизации в реестре
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}  # Логин из секретов репозитория
+          password: ${{ secrets.DOCKERHUB_TOKEN }}     # Токен (не пароль!) из секретов
+
+      - name: Build and push
+        uses: docker/build-push-action@v4  # Официальный Action для сборки и пуша
+        with:
+          context: docker/nodeapp  # Папка с Dockerfile
+          push: true               # Сразу пушим в реестр
+          tags: |
+            ${{ env.DOCKERHUB_IMAGE }}:${{ steps.version.outputs.SHA }}  # Тег с версией: username/final-app:a1b2c3d4
+            ${{ env.DOCKERHUB_IMAGE }}:latest                             # Тег latest — всегда актуальная версия
+
+# ─────────────────────────────────────────
+# ДЖОБ 4: Деплой на сервер
+# ─────────────────────────────────────────
+  deploy:
+    name: Deploy to server
+    runs-on: ubuntu-latest
+    needs: build-push  # Запускается только после успешной публикации образа
+
+    steps:
+      - name: Set version
+        id: version
+        run: echo "SHA=${GITHUB_SHA::8}" >> $GITHUB_OUTPUT
+
       - name: Notify start
+        # Отправляем сообщение в Telegram что деплой начался
         run: |
           curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage \
             -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
@@ -34,29 +126,32 @@ jobs:
           Коммит: ${{ github.event.head_commit.message }}"
 
       - name: Deploy to server
-        uses: appleboy/ssh-action@master
+        uses: appleboy/ssh-action@master  # Action для выполнения команд на сервере по SSH
         with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          envs: IMAGE_NAME,CONTAINER_NAME,PORT
+          host: ${{ secrets.SERVER_HOST }}        # IP или домен сервера
+          username: ${{ secrets.SERVER_USER }}    # SSH пользователь
+          key: ${{ secrets.SERVER_SSH_KEY }}      # Приватный SSH ключ
+          envs: IMAGE_NAME,CONTAINER_NAME,PORT    # Переменные окружения передаём на сервер
           script: |
             cd ~/devops-lab
-            git pull origin main
+            git pull origin main  # Обновляем код на сервере
 
-            # Сборка с версией
-            SHA=$(git rev-parse --short HEAD)
-            docker build -t $IMAGE_NAME:$SHA -t $IMAGE_NAME:latest ~/devops-lab/final-project
+            SHA=$(git rev-parse --short HEAD)  # Получаем хэш текущего коммита
 
-            # Деплой через скрипт
+            # Скачиваем готовый образ из Docker Hub (не собираем на сервере)
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/final-app:$SHA
+            # Даём образу локальное имя для удобства
+            docker tag ${{ secrets.DOCKERHUB_USERNAME }}/final-app:$SHA $IMAGE_NAME:$SHA
+
+            # Запускаем деплой через наш bash скрипт
             bash bash/deploy.sh $CONTAINER_NAME $PORT $IMAGE_NAME:$SHA ~/devops-lab/final-project
 
-            # Сохрани версию в файл
+            # Сохраняем текущую версию в файл — для мониторинга и откатов
             echo $SHA > ~/current_version.txt
-            echo "✅ Задеплоена версия: $SHA"
+            echo "Задеплоена версия: $SHA"
 
       - name: Notify success
-        if: success()
+        if: success()  # Выполняется только если все предыдущие шаги прошли успешно
         run: |
           curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage \
             -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \
@@ -65,7 +160,7 @@ jobs:
           Сайт: http://${{ secrets.SERVER_HOST }}:8888"
 
       - name: Notify failure
-        if: failure()
+        if: failure()  # Выполняется только если что-то упало
         run: |
           curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage \
             -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} \

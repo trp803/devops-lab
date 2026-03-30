@@ -1,17 +1,29 @@
-global:
-  scrape_interval: 15s
-  evaluation_interval: 15s
+# Конфигурация Prometheus
+# Prometheus работает по принципу pull: сам приходит к сервисам и забирает метрики
+# Сервисы должны отдавать метрики в формате Prometheus на эндпоинте /metrics
 
+global:
+  scrape_interval: 15s      # Как часто забирать метрики — каждые 15 секунд
+  evaluation_interval: 15s  # Как часто проверять правила алертов (если настроены)
+
+# scrape_configs — список сервисов от которых собирать метрики
 scrape_configs:
+
+  # Prometheus мониторит сам себя
+  # Его собственные метрики: кол-во запросов, использование памяти, время scrape
   - job_name: 'prometheus'
     static_configs:
-      - targets: ['localhost:9090']
+      - targets: ['localhost:9090']  # Сам себя Prometheus видит как localhost
 
+  # Node Exporter — метрики сервера (CPU, RAM, диск, сеть)
+  # 'node-exporter' — это имя сервиса в docker-compose, Docker разрешает его в IP
   - job_name: 'node-exporter'
     static_configs:
-      - targets: ['node-exporter:9100']
+      - targets: ['node-exporter:9100']  # host:port где доступны метрики
 
+  # cAdvisor — метрики Docker контейнеров
+  # Внутри Docker сети cAdvisor слушает на 8080 (снаружи маппится на 8082)
   - job_name: 'cadvisor'
     static_configs:
-      - targets: ['cadvisor:8080']
-    # cadvisor внутри сети слушает на 8080, снаружи маппится на 8081
+      - targets: ['cadvisor:8080']  # Внутри сети используем внутренний порт
+    # cadvisor внутри сети слушает на 8080, снаружи маппится на 8082

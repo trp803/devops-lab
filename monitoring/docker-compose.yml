@@ -1,58 +1,118 @@
 version: '3.8'
 
 services:
+
+  # ─────────────────────────────────────────
+  # PROMETHEUS — сбор и хранение метрик
+  # Метрики — числовые показатели: CPU %, RAM, кол-во запросов, ошибки
+  # Prometheus сам приходит к сервисам и "scrape" (скачивает) их метрики
+  # ─────────────────────────────────────────
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
-    restart: unless-stopped
+    restart: unless-stopped  # Перезапускать всегда, кроме случая ручной остановки
     ports:
-      - "9090:9090"
+      - "9090:9090"  # Веб-интерфейс и API Prometheus доступны на порту 9090
     volumes:
+      # Монтируем наш конфиг внутрь контейнера (ro = read-only, контейнер не может изменить)
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      # Named volume для хранения данных метрик между перезапусками
       - prometheus_data:/prometheus
     command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.retention.time=15d'
+      - '--config.file=/etc/prometheus/prometheus.yml'  # Указываем где наш конфиг
+      - '--storage.tsdb.retention.time=15d'             # Хранить данные 15 дней, потом удалять
 
+  # ─────────────────────────────────────────
+  # GRAFANA — визуализация метрик и логов
+  # Grafana читает данные из Prometheus и Loki и строит красивые графики
+  # ─────────────────────────────────────────
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
     restart: unless-stopped
     ports:
-      - "3001:3000"
+      - "3001:3000"  # Grafana внутри слушает 3000, снаружи доступна на 3001
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin123
-      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SECURITY_ADMIN_PASSWORD=admin123  # Пароль для входа (логин: admin)
+      - GF_USERS_ALLOW_SIGN_UP=false         # Запрещаем самостоятельную регистрацию
     volumes:
-      - grafana_data:/var/lib/grafana
+      - grafana_data:/var/lib/grafana  # Хранение дашбордов и настроек между перезапусками
+      # Provisioning — автоматическая настройка datasources при старте контейнера
+      - ./grafana/provisioning:/etc/grafana/provisioning
 
+  # ─────────────────────────────────────────
+  # NODE EXPORTER — метрики сервера
+  # Собирает метрики хост-машины: CPU, RAM, диск, сеть
+  # Prometheus приходит к нему каждые 15 секунд и забирает данные
+  # ─────────────────────────────────────────
   node-exporter:
     image: prom/node-exporter:latest
     container_name: node-exporter
     restart: unless-stopped
     ports:
-      - "9100:9100"
+      - "9100:9100"  # Метрики доступны на /metrics этого порта
     volumes:
-      - /proc:/host/proc:ro
-      - /sys:/host/sys:ro
-      - /:/rootfs:ro
+      # Даём доступ к системным директориям хоста (ro = только чтение)
+      - /proc:/host/proc:ro   # Информация о процессах
+      - /sys:/host/sys:ro     # Системная информация (железо, ядро)
+      - /:/rootfs:ro          # Корневая файловая система (для метрик диска)
     command:
-      - '--path.procfs=/host/proc'
-      - '--path.sysfs=/host/sys'
+      - '--path.procfs=/host/proc'   # Говорим где искать /proc
+      - '--path.sysfs=/host/sys'     # Говорим где искать /sys
+      # Исключаем системные точки монтирования из метрик диска (не нужны)
       - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
 
+  # ─────────────────────────────────────────
+  # CADVISOR — метрики Docker контейнеров
+  # Показывает CPU, RAM, сеть для каждого контейнера отдельно
+  # ─────────────────────────────────────────
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:latest
     container_name: cadvisor
     restart: unless-stopped
     ports:
-      - "8082:8080"
+      - "8082:8080"  # cAdvisor внутри слушает 8080, снаружи доступен на 8082
     volumes:
-      - /:/rootfs:ro
-      - /var/run:/var/run:ro
-      - /sys:/sys:ro
-      - /var/lib/docker:/var/lib/docker:ro
+      - /:/rootfs:ro                          # Доступ к файловой системе для метрик диска
+      - /var/run:/var/run:ro                  # Docker socket — для информации о контейнерах
+      - /sys:/sys:ro                          # Системная информация
+      - /var/lib/docker:/var/lib/docker:ro    # Данные Docker (образы, контейнеры)
 
+  # ─────────────────────────────────────────
+  # LOKI — хранение и поиск логов
+  # Аналог Elasticsearch но специально для логов
+  # Принимает логи от Promtail и хранит их
+  # ─────────────────────────────────────────
+  loki:
+    image: grafana/loki:latest
+    container_name: loki
+    restart: unless-stopped
+    ports:
+      - "3100:3100"  # API Loki — Promtail отправляет сюда логи, Grafana читает отсюда
+    volumes:
+      - ./loki/loki.yml:/etc/loki/local-config.yaml  # Конфиг Loki
+      - loki_data:/loki                               # Хранение логов между перезапусками
+    command: -config.file=/etc/loki/local-config.yaml  # Указываем конфиг при старте
+
+  # ─────────────────────────────────────────
+  # PROMTAIL — сборщик логов
+  # Читает лог-файлы Docker контейнеров и системы, отправляет в Loki
+  # Аналог Filebeat/Fluentd но от команды Grafana
+  # ─────────────────────────────────────────
+  promtail:
+    image: grafana/promtail:latest
+    container_name: promtail
+    restart: unless-stopped
+    # Нет ports: — Promtail только отправляет данные, ничего не принимает снаружи
+    volumes:
+      - ./promtail/promtail.yml:/etc/promtail/config.yml  # Конфиг Promtail
+      - /var/log:/var/log:ro                               # Системные логи хоста
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro  # Логи контейнеров
+    command: -config.file=/etc/promtail/config.yml
+
+# Named volumes — Docker управляет ими сам
+# Данные сохраняются даже если контейнер удалён
 volumes:
-  prometheus_data:
-  grafana_data:
+  prometheus_data:  # Метрики Prometheus
+  grafana_data:     # Дашборды и настройки Grafana
+  loki_data:        # Логи Loki

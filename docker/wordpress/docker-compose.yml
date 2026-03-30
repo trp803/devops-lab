@@ -5,33 +5,38 @@
 version: '3.8'
 
 services:
+  # MySQL — база данных для WordPress
   db:
-    image: mysql:8.0
+    image: mysql:8.0              # Официальный образ MySQL версии 8.0
     container_name: wordpress-db
-    restart: always
+    restart: always               # Перезапускать всегда (даже после reboot)
     environment:
-      # Значения берутся из .env файла, не хранятся в коде
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      # ${VAR} — значения берутся из .env файла (не хранятся в коде)
+      # Это безопасная практика: .env добавлен в .gitignore
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}  # Пароль root пользователя MySQL
+      MYSQL_DATABASE: ${MYSQL_DATABASE}            # Имя базы данных для WordPress
+      MYSQL_USER: ${MYSQL_USER}                    # Пользователь базы данных
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}            # Пароль пользователя
     volumes:
-      - db_data:/var/lib/mysql
+      # Named volume — данные БД сохраняются между перезапусками контейнера
+      - db_data:/var/lib/mysql  # /var/lib/mysql — стандартная папка MySQL для данных
 
+  # WordPress — CMS (система управления контентом)
   wordpress:
-    image: wordpress:latest
+    image: wordpress:latest      # Официальный образ WordPress
     container_name: wordpress-app
     restart: always
     ports:
-      - "8080:80"
+      - "8080:80"  # WordPress доступен на порту 8080 хоста (80 внутри контейнера)
     environment:
-      # Значения берутся из .env файла, не хранятся в коде
-      WORDPRESS_DB_HOST: ${WORDPRESS_DB_HOST}
-      WORDPRESS_DB_USER: ${WORDPRESS_DB_USER}
-      WORDPRESS_DB_PASSWORD: ${WORDPRESS_DB_PASSWORD}
-      WORDPRESS_DB_NAME: ${WORDPRESS_DB_NAME}
+      WORDPRESS_DB_HOST: ${WORDPRESS_DB_HOST}          # Адрес БД (имя сервиса 'db')
+      WORDPRESS_DB_USER: ${WORDPRESS_DB_USER}          # Пользователь БД
+      WORDPRESS_DB_PASSWORD: ${WORDPRESS_DB_PASSWORD}  # Пароль
+      WORDPRESS_DB_NAME: ${WORDPRESS_DB_NAME}          # Имя БД
     depends_on:
-      - db
+      - db  # WordPress запустится только после того как стартует контейнер db
 
+# Объявляем named volumes
+# Docker создаёт их автоматически и управляет их расположением
 volumes:
-  db_data:
+  db_data:  # Данные MySQL — переживут удаление и пересоздание контейнера

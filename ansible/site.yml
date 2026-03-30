@@ -1,7 +1,12 @@
 ---
+# Главный плейбук — точка входа для настройки серверов
+# Запускает роль webserver на всех серверах из группы webservers
+
 - name: Configure Web Server
-  hosts: webservers
-  become: yes
+  hosts: webservers  # Группа из inventory.ini (список серверов)
+  become: yes        # Выполнять от root (sudo)
 
   roles:
-    - webserver
+    - webserver  # Подключаем роль из папки ansible/roles/webserver/
+                 # Роль = набор задач, шаблонов и переменных для определённой цели
+                 # Выполняется файл roles/webserver/tasks/main.yml

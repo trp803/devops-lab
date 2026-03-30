@@ -1,28 +1,42 @@
 #!/bin/bash
 
+# ================================
+# Информация о сервере
+# Показывает текущее состояние системы одной командой
+# ================================
+
 echo "================================"
 echo "   ИНФОРМАЦИЯ О СЕРВЕРЕ"
 echo "================================"
 
 echo ""
-echo "📅 Дата и время: $(date)"
-echo "🖥️  Hostname: $(hostname)"
+echo "📅 Дата и время: $(date)"         # Текущие дата и время
+echo "🖥️  Hostname: $(hostname)"          # Имя сервера
+
+# cat /etc/os-release — файл с информацией об ОС
+# grep PRETTY_NAME — находим строку с полным названием ОС
+# cut -d= -f2 — разбиваем по = и берём вторую часть (само название)
 echo "🐧 OS: $(cat /etc/os-release | grep PRETTY_NAME | cut -d= -f2)"
 
 echo ""
 echo "💾 ПАМЯТЬ:"
-free -h
+free -h  # -h = human-readable: показывает в MB/GB вместо байт
 
 echo ""
 echo "💿 ДИСК:"
-df -h /
+df -h /  # -h = human-readable, / = смотрим корневой раздел
 
 echo ""
 echo "⚡ НАГРУЗКА:"
-uptime
+uptime  # Показывает: время работы, кол-во пользователей, load average (1/5/15 мин)
 
 echo ""
 echo "🐳 DOCKER контейнеры:"
+# --format — задаём формат вывода через Go-шаблоны
+# table — выводим в виде таблицы с заголовками
+# {{.Names}} — имя контейнера
+# {{.Status}} — статус (Up 2 hours, Exited, etc.)
+# {{.Ports}} — проброшенные порты
 docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
 echo ""

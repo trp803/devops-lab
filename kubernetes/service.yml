@@ -1,12 +1,26 @@
-apiVersion: v1
+# Kubernetes Service — открывает доступ к Pod'ам
+# Pod'ы имеют случайные IP которые меняются — Service даёт стабильный адрес
+# и балансирует трафик между всеми репликами
+
+apiVersion: v1    # Service входит в базовый API (v1, без apps/)
 kind: Service
+
 metadata:
-  name: webapp-service
+  name: webapp-service  # Имя Service в кластере
+
 spec:
+  # selector — находим Pod'ы к которым направлять трафик
+  # Все Pod'ы с меткой app=webapp получат трафик (round-robin балансировка)
   selector:
     app: webapp
+
   ports:
     - protocol: TCP
-      port: 80
-      targetPort: 80
+      port: 80        # Порт Service (на котором слушает Service внутри кластера)
+      targetPort: 80  # Порт контейнера куда перенаправляется трафик (containerPort из Deployment)
+
+  # NodePort — тип Service который открывает порт на каждой ноде кластера
+  # Позволяет обратиться к приложению снаружи: http://<IP-ноды>:<NodePort>
+  # Kubernetes сам выберет порт в диапазоне 30000-32767
+  # Альтернативы: ClusterIP (только внутри кластера), LoadBalancer (облачный балансировщик)
   type: NodePort

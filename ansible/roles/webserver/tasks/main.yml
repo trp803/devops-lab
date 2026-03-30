@@ -1,25 +1,34 @@
 ---
+# Задачи роли webserver — выполняются при запуске site.yml
+# Переменные (app_dir, app_name, app_port) берутся из roles/webserver/vars/main.yml
+
+# Создаём директорию для файлов веб-приложения
 - name: Создать папку приложения
   file:
-    path: "{{ app_dir }}"
-    state: directory
-    owner: ubuntu
-    mode: '0755'
+    path: "{{ app_dir }}"  # Путь из переменной vars/main.yml
+    state: directory       # Убедиться что это директория
+    owner: ubuntu          # Владелец файла — пользователь ubuntu
+    mode: '0755'           # Права: все могут читать и выполнять, только владелец пишет
 
+# Генерируем index.html из Jinja2 шаблона
+# Jinja2 позволяет вставлять переменные Ansible в HTML файл
 - name: Создать index.html из шаблона
   template:
-    src: index.html.j2
-    dest: "{{ app_dir }}/index.html"
+    src: index.html.j2               # Шаблон из roles/webserver/templates/
+    dest: "{{ app_dir }}/index.html" # Куда положить готовый файл на сервере
     owner: ubuntu
-    mode: '0644'
+    mode: '0644'  # Все могут читать, только владелец пишет
 
+# Перезапускаем nginx контейнер с новыми файлами
 - name: Запустить nginx
   shell: |
+    # Останавливаем и удаляем старый контейнер (|| true — не падать если его нет)
     docker stop {{ app_name }} || true
     docker rm {{ app_name }} || true
+    # Запускаем новый контейнер
     docker run -d \
-      -p {{ app_port }}:80 \
-      -v {{ app_dir }}:/usr/share/nginx/html \
-      --name {{ app_name }} \
+      -p {{ app_port }}:80 \                  # Порт из переменной
+      -v {{ app_dir }}:/usr/share/nginx/html \ # Монтируем папку с нашим HTML в nginx
+      --name {{ app_name }} \                  # Имя контейнера из переменной
       --restart always \
       nginx:alpine
