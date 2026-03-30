@@ -41,15 +41,15 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           envs: IMAGE_NAME,CONTAINER_NAME,PORT
           script: |
-            cd ~/devops-practice
+            cd ~/devops-lab
             git pull origin main
 
             # Сборка с версией
             SHA=$(git rev-parse --short HEAD)
-            docker build -t $IMAGE_NAME:$SHA -t $IMAGE_NAME:latest ~/devops-practice/final-project
+            docker build -t $IMAGE_NAME:$SHA -t $IMAGE_NAME:latest ~/devops-lab/final-project
 
             # Деплой через скрипт
-            bash bash/deploy.sh $CONTAINER_NAME $PORT $IMAGE_NAME:$SHA ~/devops-practice/final-project
+            bash bash/deploy.sh $CONTAINER_NAME $PORT $IMAGE_NAME:$SHA ~/devops-lab/final-project
 
             # Сохрани версию в файл
             echo $SHA > ~/current_version.txt

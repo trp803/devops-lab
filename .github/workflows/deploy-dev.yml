@@ -26,9 +26,9 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
-            cd ~/devops-practice
+            cd ~/devops-lab
             git pull origin dev
-            bash bash/deploy.sh final-app-dev 8889 final-app-dev ~/devops-practice/final-project
+            bash bash/deploy.sh final-app-dev 8889 final-app-dev ~/devops-lab/final-project
 
       - name: Notify success
         if: success()

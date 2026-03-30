@@ -5,7 +5,7 @@
 # ================================
 
 # Настройки
-SOURCE_DIR="/home/ubuntu/devops-practice"
+SOURCE_DIR="/home/ubuntu/devops-lab"
 BACKUP_DIR="/home/ubuntu/backups"
 DATE=$(date +%Y-%m-%d_%H-%M-%S)
 BACKUP_NAME="backup_$DATE.tar.gz"
