@@ -6,6 +6,9 @@
     "start": "node app.js",
     "test": "jest"
   },
+  "dependencies": {
+    "prom-client": "^15.0.0"
+  },
   "devDependencies": {
     "jest": "^29.0.0"
   }

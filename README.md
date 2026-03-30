@@ -148,6 +148,8 @@ devops-lab/
 | Prometheus | `9090` | http://localhost:9090 |
 | Node Exporter | `9100` | http://localhost:9100/metrics |
 | cAdvisor | `8082` | http://localhost:8082 |
+| Blackbox Exporter | `9115` | http://localhost:9115 |
+| Uptime Kuma | `3002` | http://localhost:3002 |
 | Loki | `3100` | http://localhost:3100 |
 | WordPress | `8080` | http://localhost:8080 |
 | MongoDB | `27017` | mongodb://localhost:27017 |

@@ -239,3 +239,134 @@ groups:
         annotations:
           summary: "Контейнер {{ $labels.name }} использует много памяти"
           description: "Потребление RAM: {{ $value | printf \"%.0f\" }}MB. Проверь утечки памяти."
+
+  # ─────────────────────────────────────────
+  # ГРУППА: Доступность сервисов (Blackbox)
+  # ─────────────────────────────────────────
+  - orgId: 1
+    name: Service Availability
+    folder: DevOps Lab Alerts
+    interval: 1m
+
+    rules:
+
+      # ─── Алерт: Сайт недоступен (HTTP probe упал) ───
+      - uid: site-down-alert
+        title: Site Down
+
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            model:
+              # probe_success == 0 означает что Blackbox не смог получить 2xx ответ
+              # Это значит сайт недоступен снаружи (не отвечает или возвращает ошибку)
+              expr: probe_success == 0
+              intervalMs: 1000
+              maxDataPoints: 43200
+
+          - refId: B
+            datasourceUid: "__expr__"
+            model:
+              type: reduce
+              reducer: last
+              expression: A
+
+          - refId: C
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]   # Срабатывает если хоть один сайт недоступен
+
+        for: 2m   # 2 минуты — не реагируем на мгновенные сбои
+
+        labels:
+          severity: critical
+
+        annotations:
+          summary: "Сервис {{ $labels.instance }} недоступен"
+          description: "Blackbox Exporter не может получить 2xx ответ от {{ $labels.instance }}. Проверь Nginx и приложение."
+
+      # ─── Алерт: Медленный ответ сайта ───
+      - uid: slow-response-alert
+        title: Slow HTTP Response
+
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            model:
+              # probe_duration_seconds — время полного HTTP запроса (DNS + TCP + TLS + получение ответа)
+              expr: probe_duration_seconds > 2
+              intervalMs: 1000
+              maxDataPoints: 43200
+
+          - refId: B
+            datasourceUid: "__expr__"
+            model:
+              type: reduce
+              reducer: last
+              expression: A
+
+          - refId: C
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+
+        for: 5m
+
+        labels:
+          severity: warning
+
+        annotations:
+          summary: "Медленный ответ: {{ $labels.instance }}"
+          description: "Время ответа {{ $value | printf \"%.2f\" }}с (порог: 2с). Проверь нагрузку на сервер."
+
+      # ─── Алерт: Высокий процент ошибок в Node.js ───
+      - uid: nodejs-errors-alert
+        title: High Error Rate
+
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            model:
+              # Процент ошибок 5xx от всех запросов за последние 5 минут
+              expr: sum(rate(http_requests_total{status_code=~"5.."}[5m])) / sum(rate(http_requests_total[5m])) * 100
+              intervalMs: 1000
+              maxDataPoints: 43200
+
+          - refId: B
+            datasourceUid: "__expr__"
+            model:
+              type: reduce
+              reducer: last
+              expression: A
+
+          - refId: C
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [5]   # Алерт если ошибок > 5%
+
+        for: 3m
+
+        labels:
+          severity: critical
+
+        annotations:
+          summary: "Высокий процент ошибок в приложении"
+          description: "{{ $value | printf \"%.1f\" }}% запросов завершаются с ошибкой 5xx. Проверь логи: bash logs.sh nodeapp error"

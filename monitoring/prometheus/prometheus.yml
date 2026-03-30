@@ -22,8 +22,37 @@ scrape_configs:
       - targets: ['node-exporter:9100']  # host:port где доступны метрики
 
   # cAdvisor — метрики Docker контейнеров
-  # Внутри Docker сети cAdvisor слушает на 8080 (снаружи маппится на 8082)
   - job_name: 'cadvisor'
     static_configs:
-      - targets: ['cadvisor:8080']  # Внутри сети используем внутренний порт
+      - targets: ['cadvisor:8080']
     # cadvisor внутри сети слушает на 8080, снаружи маппится на 8082
+
+  # Node.js приложение — метрики самого приложения (prom-client)
+  # http_requests_total, http_request_duration_seconds, nodejs_heap и др.
+  # Prometheus приходит к приложению напрямую по имени сервиса в Docker сети
+  - job_name: 'nodeapp'
+    static_configs:
+      - targets: ['nodeapp:3000']   # nodeapp — имя сервиса в nginx/docker-compose.yml
+    metrics_path: '/metrics'        # Эндпоинт где приложение отдаёт метрики
+
+  # Blackbox Exporter — проверка HTTP доступности сервисов снаружи
+  # Prometheus даёт Blackbox список URL, Blackbox проверяет их и возвращает результат
+  - job_name: 'blackbox'
+    metrics_path: /probe            # Blackbox принимает запросы на /probe
+    params:
+      module: [http_2xx]            # Проверяем что ответ 2xx (200, 201...)
+    static_configs:
+      - targets:
+          - http://nginx-proxy/          # Проверяем Nginx (главная страница)
+          - http://nginx-proxy/health    # Health check endpoint
+          - http://grafana:3000          # Grafana
+          - http://prometheus:9090       # Prometheus
+    relabel_configs:
+      # relabel — преобразуем метки перед сохранением в Prometheus
+      # Записываем проверяемый URL как метку instance (вместо адреса Blackbox)
+      - source_labels: [__address__]    # Берём адрес из targets
+        target_label: __param_target    # Передаём его как параметр ?target=
+      - source_labels: [__param_target]
+        target_label: instance          # Записываем как метку instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115  # Prometheus идёт к Blackbox, не к target

@@ -141,9 +141,59 @@ services:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro  # Логи контейнеров
     command: -config.file=/etc/promtail/config.yml
 
+  # ─────────────────────────────────────────
+  # BLACKBOX EXPORTER — активная проверка доступности
+  # Prometheus даёт ему список URL → он проверяет их и возвращает результат
+  # Отвечает на вопрос: "Мой сайт доступен прямо сейчас?"
+  # ─────────────────────────────────────────
+  blackbox-exporter:
+    image: prom/blackbox-exporter:latest
+    container_name: blackbox-exporter
+    restart: unless-stopped
+    ports:
+      - "9115:9115"  # UI Blackbox — можно вручную проверить URL: http://localhost:9115
+    volumes:
+      # Конфиг с описанием модулей проверки (http_2xx, tcp, icmp)
+      - ./blackbox/blackbox.yml:/etc/blackbox_exporter/config.yml
+    command:
+      - '--config.file=/etc/blackbox_exporter/config.yml'
+
+    healthcheck:
+      # Blackbox имеет /-/healthy endpoint
+      test: ["CMD", "wget", "-qO-", "http://localhost:9115/-/healthy", "||", "exit", "1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ─────────────────────────────────────────
+  # UPTIME KUMA — красивая страница статуса сервисов
+  # Показывает % uptime за 24ч/7д/30д для каждого сервиса
+  # Имеет собственную систему уведомлений (Telegram, Slack, email)
+  # Настраивается через веб-интерфейс (не через файлы)
+  # ─────────────────────────────────────────
+  uptime-kuma:
+    image: louislam/uptime-kuma:latest
+    container_name: uptime-kuma
+    restart: unless-stopped
+    ports:
+      - "3002:3001"  # Uptime Kuma внутри слушает 3001, снаружи доступна на 3002
+    volumes:
+      # Uptime Kuma хранит всё в SQLite базе внутри этого volume
+      # Мониторы, история, уведомления — всё здесь
+      - uptime_kuma_data:/app/data
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/", "||", "exit", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s  # Uptime Kuma стартует чуть дольше
+
 # Named volumes — Docker управляет ими сам
 # Данные сохраняются даже если контейнер удалён
 volumes:
-  prometheus_data:  # Метрики Prometheus
-  grafana_data:     # Дашборды и настройки Grafana
-  loki_data:        # Логи Loki
+  prometheus_data:   # Метрики Prometheus
+  grafana_data:      # Дашборды и настройки Grafana
+  loki_data:         # Логи Loki
+  uptime_kuma_data:  # База данных Uptime Kuma (SQLite)

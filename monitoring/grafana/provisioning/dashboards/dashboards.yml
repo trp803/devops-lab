@@ -1,0 +1,16 @@
+# Grafana Dashboard Provisioning — автозагрузка дашбордов при старте
+# Grafana читает этот файл и загружает все JSON дашборды из указанной папки
+# Без этого нужно каждый раз импортировать дашборды вручную через UI
+
+apiVersion: 1
+
+providers:
+  - name: DevOps Lab Dashboards   # Название провайдера (видно в UI)
+    orgId: 1                       # ID организации (1 = дефолтная)
+    type: file                     # Тип провайдера: читаем из файловой системы
+    disableDeletion: false         # false = можно удалять дашборды через UI
+    updateIntervalSeconds: 30      # Проверять новые/изменённые файлы каждые 30 сек
+    allowUiUpdates: true           # Разрешить редактировать дашборды через UI
+    options:
+      path: /etc/grafana/provisioning/dashboards  # Папка с JSON файлами дашбордов
+      foldersFromFilesStructure: true  # Создавать папки в Grafana по структуре директорий

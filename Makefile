@@ -111,8 +111,10 @@ monitoring-up:
 	@# Проверяем что .env файл существует
 	@test -f monitoring/.env || (echo "$(YELLOW)Создай monitoring/.env из .env.example$(RESET)" && cp monitoring/.env.example monitoring/.env)
 	docker compose -f monitoring/docker-compose.yml up -d
-	@echo "$(GREEN)Grafana:    http://localhost:3001  (admin/admin123)$(RESET)"
-	@echo "$(GREEN)Prometheus: http://localhost:9090$(RESET)"
+	@echo "$(GREEN)Grafana:      http://localhost:3001  (admin/admin123)$(RESET)"
+	@echo "$(GREEN)Prometheus:   http://localhost:9090$(RESET)"
+	@echo "$(GREEN)Blackbox:     http://localhost:9115$(RESET)"
+	@echo "$(GREEN)Uptime Kuma:  http://localhost:3002$(RESET)"
 
 monitoring-down:
 	@echo "$(YELLOW)Останавливаю мониторинг...$(RESET)"

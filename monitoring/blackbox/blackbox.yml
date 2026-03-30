@@ -1,0 +1,48 @@
+# Конфигурация Blackbox Exporter
+# Blackbox Exporter — активный монитор: сам ходит по URL и проверяет доступность
+# В отличие от Node Exporter (пассивный — отдаёт метрики о себе),
+# Blackbox активно проверяет внешние сервисы
+
+modules:
+
+  # ── Модуль: HTTP проверка (ожидаем 2xx ответ) ──
+  # Используется для проверки веб-сервисов и API
+  http_2xx:
+    prober: http          # Тип проверки: http, tcp, icmp, dns
+    timeout: 5s           # Максимальное время ожидания ответа
+
+    http:
+      valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]  # Допустимые версии HTTP
+      valid_status_codes: []    # Пусто = принимать любой 2xx (200-299)
+      method: GET               # HTTP метод
+      follow_redirects: true    # Следовать редиректам (301, 302)
+      preferred_ip_protocol: "ip4"  # Использовать IPv4
+
+  # ── Модуль: HTTPS проверка с валидацией сертификата ──
+  # Дополнительно проверяет что SSL сертификат действителен
+  https_2xx:
+    prober: http
+    timeout: 5s
+    http:
+      valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+      valid_status_codes: []
+      method: GET
+      follow_redirects: true
+      tls_config:
+        insecure_skip_verify: false  # false = строго проверять сертификат
+        # Если сертификат просрочен или самоподписанный — проверка упадёт
+
+  # ── Модуль: TCP проверка ──
+  # Проверяет что порт открыт и принимает соединения (без HTTP)
+  # Используется для баз данных, очередей и других TCP сервисов
+  tcp_connect:
+    prober: tcp
+    timeout: 5s
+
+  # ── Модуль: ICMP ping ──
+  # Проверяет что хост отвечает на ping
+  icmp:
+    prober: icmp
+    timeout: 5s
+    icmp:
+      preferred_ip_protocol: "ip4"
